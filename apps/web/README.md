@@ -1,3 +1,37 @@
+# MintMoment Web
+
+This app powers the event streaming experience.
+
+Environment variables:
+- NEXT_PUBLIC_SUPABASE_URL
+- NEXT_PUBLIC_SUPABASE_ANON_KEY
+- OPENAI_API_KEY
+- FACEBOOK_CLIENT_ID
+- FACEBOOK_CLIENT_SECRET
+- TWITTER_CLIENT_ID
+- TWITTER_CLIENT_SECRET
+- INSTAGRAM_CLIENT_ID
+- INSTAGRAM_CLIENT_SECRET
+- NEXTAUTH_URL
+- NEXTAUTH_SECRET
+- APP_URL
+- STREAM_RECONNECT_GRACE_MS
+- NEXT_PUBLIC_AI_FRAME_FPS
+
+New env flags:
+- STREAM_RECONNECT_GRACE_MS: grace period in ms to keep a stream alive after a transient disconnect (default 10000)
+- NEXT_PUBLIC_AI_FRAME_FPS: AI frame capture rate (0 disables; recommended 1-2 for testing)
+
+Local development:
+- bun install
+- bun run dev or your preferred dev command for running the custom server
+
+Manual testing guidance:
+- Stream under throttled network (e.g., Slow 3G) to validate chunk queueing and reconnect flush
+- Join as a spectator mid-stream and after streamer reconnects
+- Set NEXT_PUBLIC_AI_FRAME_FPS=1 to validate frame capture without impacting playback
+- Validate social logins and confirm provider tokens are available under session.social.{provider}
+
 # MintMoments - Web
 
 ### Workspace Folder Structure
