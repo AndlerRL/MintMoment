@@ -237,10 +237,21 @@ export function VideoStreamer({
   useEffect(() => {
     socketRef.current = io();
 
+    const joinRoom = async () => {
+      socketRef.current?.emit("join-room", { roomId: eventData.id, username: session?.user.user_metadata.username });
+      await getAllUserStreamers();
+    };
+
     socketRef.current.on("connect", async () => {
       console.log("Viewer connected to Socket.IO server");
-      socketRef.current?.emit("join-room", { roomId: eventData.id, username: session?.user.user_metadata.username });
-      await getAllUserStreamers()
+      await joinRoom();
+    });
+
+    socketRef.current.on("reconnect", async () => {
+      await joinRoom();
+      if (currentStreamId) {
+        await initMediaSource();
+      }
     });
 
     socketRef.current.on("viewer-joined", ({ viewers }) => {

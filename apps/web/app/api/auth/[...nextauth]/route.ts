@@ -48,59 +48,54 @@ const options: NextAuthOptions = {
     InstagramProvider({
       clientId: process.env.INSTAGRAM_CLIENT_ID || "",
       clientSecret: process.env.INSTAGRAM_CLIENT_SECRET || "",
-      // authorization: 'https://api.instagram.com/oauth/authorize?scope=business_basic%2Cbusiness_content_publish',
       authorization:
         "https://api.instagram.com/oauth/authorize?scope=user_profile,user_media",
     }),
   ],
   callbacks: {
-    async jwt({ token, account }) {
+    async jwt({ token, account, profile }) {
       const supabase = await createClient();
       const { session } = await useServerSession();
       const userMetadata = session?.user_metadata;
-      console.log("㊙️ jwt ㊙️", token, account);
 
-      if (account && userMetadata) {
-        const user = {
+      if (account) {
+        const providers = (token as any).providers || {};
+        providers[account.provider] = {
           name: token.name,
           picture: token.picture,
-        };
-        token[account.provider] = {
-          ...user,
           access_token: account.access_token,
+          refresh_token: (account as any).refresh_token,
           expires_at: account.expires_at,
+          scope: (account as any).scope,
+          providerAccountId: (account as any).providerAccountId,
+          profile,
         };
+        (token as any).providers = providers;
 
-        if (!userMetadata[account.provider]) {
-          userMetadata[account.provider] = user;
-
-          supabase.auth.updateUser({
-            data: userMetadata,
-          });
+        if (userMetadata) {
+          const meta = { ...userMetadata };
+          meta[account.provider] = {
+            name: token.name,
+            picture: token.picture,
+            providerAccountId: (account as any).providerAccountId,
+          };
+          await supabase.auth.updateUser({ data: meta });
         }
       }
 
       return token;
     },
     async session({ session, token }) {
-      session.user = {
-        facebook: undefined,
-        twitter: undefined,
-        instagram: undefined,
-      };
-      const user = {
-        name: token.name ?? undefined,
-        access_token: token.access_token as string,
-      };
-
-      if (token.facebook) {
-        session.user.facebook = user;
-      } else if (token.twitter) {
-        session.user.twitter = user;
-      } else if (token.instagram) {
-        session.user.instagram = user;
+      const providers = (token as any).providers || {};
+      (session as any).social = {};
+      for (const key of Object.keys(providers)) {
+        (session as any).social[key] = {
+          name: providers[key]?.name,
+          picture: providers[key]?.picture,
+          access_token: providers[key]?.access_token,
+          expires_at: providers[key]?.expires_at,
+        };
       }
-
       return session;
     },
   },

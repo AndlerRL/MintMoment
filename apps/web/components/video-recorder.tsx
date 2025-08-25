@@ -44,6 +44,12 @@ export function VideoRecorder({
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const socketRef = useRef<Socket | null>(null);
+  const sendQueueRef = useRef<
+    { roomId: number; streamId: string; chunk: ArrayBuffer; username: string }[]
+  >([]);
+  const currentStreamIdRef = useRef<string | null>(null);
+  const heartbeatRef = useRef<number | null>(null);
+  const aiTimerRef = useRef<number | null>(null);
 
   const supabase = createClient();
   const session = useSession();
@@ -60,22 +66,48 @@ export function VideoRecorder({
   useEffect(() => {
     socketRef.current = io();
 
+    const flushQueue = () => {
+      if (!socketRef.current?.connected) return;
+      while (sendQueueRef.current.length) {
+        const payload = sendQueueRef.current.shift()!;
+        socketRef.current.emit("stream-chunk", payload);
+      }
+    };
+
     socketRef.current.on("connect", () => {
-      console.log("Connected to Socket.IO server");
-      socketRef.current?.emit("join-room", eventData.id);
+      socketRef.current?.emit("join-room", { roomId: eventData.id, username: session?.user.user_metadata.username });
+      flushQueue();
+    });
+
+    socketRef.current.on("reconnect", () => {
+      socketRef.current?.emit("join-room", { roomId: eventData.id, username: session?.user.user_metadata.username });
+      flushQueue();
     });
 
     socketRef.current.on("viewer-joined", ({ username, viewers }) => {
-      // console.log("Viewer joined:", username);
       setViewersCount(viewers);
       toast.info(`${username} joined to the stream.`);
     });
 
+    if (heartbeatRef.current) {
+      clearInterval(heartbeatRef.current);
+      heartbeatRef.current = null;
+    }
+    heartbeatRef.current = window.setInterval(() => {
+      if (isStreaming) {
+        socketRef.current?.emit("heartbeat", { roomId: eventData.id });
+      }
+    }, 5000);
+
     return () => {
       stopStreamingAndRecording();
+      if (heartbeatRef.current) {
+        clearInterval(heartbeatRef.current);
+        heartbeatRef.current = null;
+      }
       socketRef.current?.disconnect();
     };
-  }, [eventData.id]);
+  }, [eventData.id, isStreaming, session?.user.user_metadata.username]);
 
   const startMediaStream = async () => {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -135,12 +167,11 @@ export function VideoRecorder({
 
       if (streamError) throw streamError;
 
-      // Emit start-stream event with stream ID
       socketRef.current?.emit("start-stream", { roomId: eventData.id, streamId: streamData.id, username: session.user.user_metadata.username });
 
+      currentStreamIdRef.current = String(streamData.id);
       setIsStreaming(true);
 
-      // Set up MediaRecorder for local recording and streaming
       const mediaRecorder = new MediaRecorder(streamMediaRef.current, {
         mimeType: "video/webm; codecs=vp9,opus",
       });
@@ -148,17 +179,20 @@ export function VideoRecorder({
       mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
           chunksRef.current.push(event.data);
-          // console.log("Data available:", event.data);
-          // Send chunk via Socket.IO
           const reader = new FileReader();
           reader.onloadend = () => {
             const arrayBuffer = reader.result as ArrayBuffer;
-            socketRef.current?.emit("stream-chunk", {
+            const payload = {
               roomId: eventData.id,
-              streamId: streamData.id,
+              streamId: currentStreamIdRef.current || String(streamData.id),
               chunk: arrayBuffer,
               username: session.user.user_metadata.username,
-            });
+            };
+            if (!socketRef.current?.connected) {
+              sendQueueRef.current.push(payload);
+            } else {
+              socketRef.current.emit("stream-chunk", payload);
+            }
           };
           reader.readAsArrayBuffer(event.data);
         }
@@ -166,8 +200,30 @@ export function VideoRecorder({
 
       mediaRecorder.onstop = createPreview;
       mediaRecorderRef.current = mediaRecorder;
-      mediaRecorder.start(500); // Collect data every half second
-      setPreviewUrl(undefined); // Clear any existing preview
+      mediaRecorder.start(1000);
+      setPreviewUrl(undefined);
+      const aiFps = Number(process.env.NEXT_PUBLIC_AI_FRAME_FPS || 0);
+      if (aiFps > 0) {
+        const video = streamerVideoRef.current;
+        if (video) {
+          const canvas = document.createElement("canvas");
+          const ctx = canvas.getContext("2d");
+          aiTimerRef.current = window.setInterval(async () => {
+            if (!ctx || !video.videoWidth || !video.videoHeight) return;
+            canvas.width = Math.max(1, Math.floor(video.videoWidth / 4));
+            canvas.height = Math.max(1, Math.floor(video.videoHeight / 4));
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const blob = await new Promise<Blob | null>((resolve) =>
+              canvas.toBlob((b) => resolve(b), "image/jpeg", 0.6)
+            );
+            if (blob) {
+              try {
+                console.debug("AI frame captured", { size: blob.size });
+              } catch {}
+            }
+          }, Math.max(250, Math.floor(1000 / aiFps)));
+        }
+      }
     } catch (err) {
       console.error("Error starting stream and recording:", err);
       setError("Failed to start streaming and recording");
@@ -187,6 +243,10 @@ export function VideoRecorder({
       mediaRecorderRef.current.state !== "inactive"
     ) {
       mediaRecorderRef.current.stop();
+    }
+    if (aiTimerRef.current) {
+      clearInterval(aiTimerRef.current);
+      aiTimerRef.current = null;
     }
     if (streamMediaRef.current) {
       for (const track of streamMediaRef.current.getTracks()) {
@@ -212,6 +272,7 @@ export function VideoRecorder({
 
     setIsStreaming(false);
     socketRef.current?.emit("end-stream", { roomId: eventData.id, streamId: streamData.id, username: session.user.user_metadata.username });
+    currentStreamIdRef.current = null;
   }, [eventData, isStreaming, session?.user, supabase]);
 
   const createPreview = () => {
