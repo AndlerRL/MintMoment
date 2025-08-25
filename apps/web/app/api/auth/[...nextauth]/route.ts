@@ -7,24 +7,9 @@ import TwitterProvider from "next-auth/providers/twitter";
 
 declare module "next-auth" {
   interface Session {
-    user: {
-      facebook?: {
+    social?: {
+      [provider: string]: {
         name?: string;
-        email?: string;
-        picture?: string;
-        access_token?: string;
-        expires_at?: number;
-      };
-      twitter?: {
-        name?: string;
-        email?: string;
-        picture?: string;
-        access_token?: string;
-        expires_at?: number;
-      };
-      instagram?: {
-        name?: string;
-        email?: string;
         picture?: string;
         access_token?: string;
         expires_at?: number;
