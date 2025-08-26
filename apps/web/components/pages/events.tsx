@@ -129,7 +129,7 @@ function EventsComponent({
 
   const availableUserData = userData.filter((key) => session && key in session.user_metadata);
   const unavailableUserData = userData.filter((key) => !(session && key in session.user_metadata));
-  const expiredSocialSessionData = userData.filter(key => !key.match(/(username|email)/g)).filter((key) => !(socialSession.data?.user && key in socialSession.data.user));
+  const expiredSocialSessionData = userData.filter(key => !key.match(/(username|email)/g)).filter((key) => !(socialSession.data?.social && key in (socialSession.data as any).social));
 
   return (
     <ScrollArea className="flex-1 w-full flex flex-col gap-12 px-4">

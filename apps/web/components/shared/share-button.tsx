@@ -13,9 +13,16 @@ export function ShareButton({ platform, content }: { platform: 'facebook' | 'ins
       return;
     }
 
+    const social = (session as any)?.social;
+    const accessToken = social?.[platform]?.access_token;
+    if (!accessToken) {
+      alert(`Missing ${platform} access token. Please connect ${platform} in your profile first.`);
+      return;
+    }
+
     try {
       const response = await axios.post(`/api/share/${platform}`, {
-        accessToken: session.user[platform]?.access_token,
+        accessToken,
         content,
       });
       alert('Content shared successfully!');

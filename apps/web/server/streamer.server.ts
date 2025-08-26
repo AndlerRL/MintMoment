@@ -5,7 +5,9 @@ export class Streamer {
   private server: Server;
   private io: SocketIOServer;
   private socket?: Socket;
-  private streamers: Map<string, Set<string>> = new Map(); // roomId -> Set of streamerIds
+  private streamers: Map<string, Set<string>> = new Map();
+  private streamSessions: Map<string, { roomId: string; streamId: string; username: string }> = new Map();
+  private disconnectTimers: Map<string, NodeJS.Timeout> = new Map();
 
   constructor({ server }: { server: Server }) {
     console.log("Streamer is created");
@@ -61,11 +63,13 @@ export class Streamer {
       this.streamers.set(roomId, new Set());
     }
     this.streamers.get(roomId)?.add(socket.id);
+    this.streamSessions.set(socket.id, { roomId, streamId, username });
+    const t = this.disconnectTimers.get(socket.id);
+    if (t) {
+      clearTimeout(t);
+      this.disconnectTimers.delete(socket.id);
+    }
     socket.to(roomId).emit("start-stream", { streamId, username });
-    // console.log(
-    //   `User ${username} ${socket.id} started stream ${streamId} in room ${roomId}`
-    // );
-    // update watchers count
     const viewers = this.io.sockets.adapter.rooms.get(roomId)?.size || 0;
     socket.to(roomId).emit("viewer-joined", { viewers, username });
   }
@@ -79,24 +83,25 @@ export class Streamer {
     }: { roomId: string; streamId: string; username: string }
   ) {
     this.streamers.get(roomId)?.delete(socket.id);
+    this.streamSessions.delete(socket.id);
     socket.to(roomId).emit("end-stream", { streamId, username });
-    // console.log(
-    //   `User ${username} ${socket.id} ended stream ${streamId} in room ${roomId}`
-    // );
-    // update watchers count
     const viewers = this.io.sockets.adapter.rooms.get(roomId)?.size || 0;
     socket.to(roomId).emit("viewer-joined", { viewers, streamerId: socket.id });
   }
 
   private disconnect(socket: Socket) {
-    for (const [roomId, streamers] of this.streamers.entries()) {
-      if (streamers.has(socket.id)) {
-        streamers.delete(socket.id);
-        socket.to(roomId).emit("end-stream", { streamId: socket.id }); // Use a proper streamId in production
-        console.log(`Stream ended in room ${roomId} due to disconnection`);
-      }
-    }
-    // console.log("User disconnected", socket.id);
+    const session = this.streamSessions.get(socket.id);
+    if (!session) return;
+    const { roomId, streamId, username } = session;
+    const t = setTimeout(() => {
+      this.streamers.get(roomId)?.delete(socket.id);
+      socket.to(roomId).emit("end-stream", { streamId, username });
+      this.streamSessions.delete(socket.id);
+      this.disconnectTimers.delete(socket.id);
+      const viewers = this.io.sockets.adapter.rooms.get(roomId)?.size || 0;
+      socket.to(roomId).emit("viewer-joined", { viewers, streamerId: socket.id });
+    }, Number(process.env.STREAM_RECONNECT_GRACE_MS || 10000));
+    this.disconnectTimers.set(socket.id, t);
   }
 
   private streamChunk(
