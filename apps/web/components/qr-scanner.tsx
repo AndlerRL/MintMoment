@@ -69,7 +69,7 @@ export function QRScanner({
           }}
           formats={["qr_code"]}
           paused={scanned}
-          components={{ audio: false }}
+          // components={{ audio: false }}
           onScan={handleScan}
           classNames={{
             container: "rounded-3xl h-full w-full max-w-[420px] max-h-[420px] [&_svg]:rounded-3xl relative",
