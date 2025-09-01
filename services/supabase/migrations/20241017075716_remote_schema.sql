@@ -1,5 +1,3 @@
-
-
 SET statement_timeout = 0;
 SET lock_timeout = 0;
 SET idle_in_transaction_session_timeout = 0;
@@ -12,6 +10,7 @@ SET client_min_messages = warning;
 SET row_security = off;
 
 
+CREATE SCHEMA IF NOT EXISTS "pgsodium";
 CREATE EXTENSION IF NOT EXISTS "pgsodium" WITH SCHEMA "pgsodium";
 
 
@@ -525,4 +524,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TAB
 
 
 
+RESET ALL;
 RESET ALL;
